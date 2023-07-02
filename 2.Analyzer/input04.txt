@@ -1,0 +1,5 @@
+CTA
+Select * from ;
+Select * from Movies;
+Select * from Stations where Station = "Noyes";
+$

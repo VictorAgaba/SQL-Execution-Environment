@@ -1,0 +1,2 @@
+select title, revenue from movies where ID < 100;
+$

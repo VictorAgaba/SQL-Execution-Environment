@@ -1,0 +1,4 @@
+MovieLens
+select max(Title), min(Title), sum(ID), avg(ID), count(ID)
+from Movies Order By sum(ID) DESC;
+$

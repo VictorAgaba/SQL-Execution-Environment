@@ -1,0 +1,6 @@
+CTA
+Select * from Stations inner join Ridership on Ridership.ID = Stations.ID
+where Title like "Tom's Square" order by Station limit 10 into #Result;
+Select * from Stations inner join Ridership on Ridership.ID = Stations.ID
+where Station like "Tom's Square" order by Station limit 10 into #Result;
+$

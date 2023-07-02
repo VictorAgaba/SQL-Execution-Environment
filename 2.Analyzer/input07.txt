@@ -1,0 +1,12 @@
+MovieLens
+Select Genre, Genres.ID from GENRES 
+  inner join Movies on Movies.ID = Genres.ID
+  where Title like "%matrix%" order by Title DESC;
+Select Genre, ID from genres 
+  inner join Movies on Movies.ID = Genres.ID
+  where Title like "%matrix%" order by Title DESC;
+Select Genre, from genRES;
+Select * from ratings where rating >= 9 order by rating limit 100;
+Select * from GENRES;
+select ID from MOVIES into #result;
+$

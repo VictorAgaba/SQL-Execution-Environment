@@ -1,0 +1,596 @@
+        -:    0:Source:execute.c
+        -:    0:Graph:a-execute.gcno
+        -:    0:Data:a-execute.gcda
+        -:    0:Runs:1
+        -:    1:/*execute.c*/
+        -:    2:
+        -:    3://
+        -:    4:// Project: Execution of queries for SimpleSQL
+        -:    5://
+        -:    6:// Prof. Joe Hummel
+        -:    7:// Northwestern University
+        -:    8:// CS 211, Winter 2023
+        -:    9://
+        -:   10:
+        -:   11:// to eliminate warnings about stdlib in Visual Studio
+        -:   12:#define _CRT_SECURE_NO_WARNINGS
+        -:   13:
+        -:   14:#include <stdio.h>
+        -:   15:#include <stdlib.h>
+        -:   16:#include <stdbool.h>  // true, false
+        -:   17:#include <string.h>   // strcpy, strcat
+        -:   18:#include <assert.h>   // assert
+        -:   19:#include <ctype.h>    // isdigit
+        -:   20:
+        -:   21:#include "ast.h"
+        -:   22:#include "database.h"
+        -:   23:#include "util.h"
+        -:   24:#include "resultset.h"
+        -:   25:#include "execute.h"
+        -:   26:
+        -:   27:
+        -:   28:
+        -:   29://
+        -:   30:// getMetaDataColumnIndex
+        -:   31://
+        -:   32:// Returns the ARRAY index of the given column in the meta-data, 
+        -:   33:// which is an integer in the range 0..numColumns.
+        -:   34://
+        5:   35:static int getMetaDataColumnIndex(struct TableMeta* tablemeta, char* columnName)
+        -:   36:{
+        7:   37:  for (int i = 0; i < tablemeta->numColumns; i++)
+        -:   38:  {
+        7:   39:    if (icmpStrings(columnName, tablemeta->columns[i].name) == 0)
+        5:   40:      return i;
+        -:   41:  }
+        -:   42:
+        -:   43:  // if get here, something is wrong:
+    #####:   44:  panic("**INTERNAL ERROR: getMetaDataColumnIndex failed to find matching column");
+        -:   45:
+    #####:   46:  return 0;  // never executed
+        -:   47:}
+        -:   48:
+        -:   49:
+        -:   50://
+        -:   51:// readDataIntoRS
+        -:   52:// 
+        -:   53:// Opens the given .data file and reads each line of data into the resultset.
+        -:   54://
+       10:   55:void readDataIntoRS(char* filename, struct TableMeta* tablemeta, struct ResultSet* rs)
+        -:   56:{
+       10:   57:  FILE* datafile = fopen(filename, "r");
+       10:   58:  if (datafile == NULL) // unable to open:
+        -:   59:  {
+    #####:   60:    printf("**INTERNAL ERROR: table's data file '%s' not found.\n", filename);
+    #####:   61:    panic("execution halted");
+        -:   62:  }
+        -:   63:
+        -:   64:  //
+        -:   65:  // allocate buffer to hold one record of data:
+        -:   66:  //
+       10:   67:  int   dataBufferSize = tablemeta->recordSize + 3;  // ends with $\n + null terminator
+       10:   68:  char* dataBuffer = (char*)malloc(sizeof(char) * dataBufferSize);
+      10*:   69:  if (dataBuffer == NULL) panic("out of memory");
+        -:   70:
+    16702:   71:  while (true)
+        -:   72:  {
+        -:   73:    //
+        -:   74:    // input the next row of data:
+        -:   75:    //
+    16702:   76:    fgets(dataBuffer, dataBufferSize, datafile);
+        -:   77:
+    16702:   78:    if (feof(datafile)) // end of the data file, we're done
+        -:   79:      break;
+        -:   80:
+        -:   81:    // printf("%s", dataBuffer);
+        -:   82:
+        -:   83:    //
+        -:   84:    // we have a row of data, so let's plan to store in result set:
+        -:   85:    //
+    16692:   86:    int rowNum = resultset_addRow(rs);
+        -:   87:
+        -:   88:    //
+        -:   89:    // recall that every data value is followed by a space...
+        -:   90:    // 
+        -:   91:    // let's turn each value into a "mini-string" by finding
+        -:   92:    // this space and replacing with '\0' so that we can 
+        -:   93:    // easily get the value and work with it:
+        -:   94:    //
+    16692:   95:    char* pos = dataBuffer;
+    16692:   96:    char* end = NULL;
+        -:   97:
+    82872:   98:    for (int c = 0; c < tablemeta->numColumns; c++)
+        -:   99:    {
+    66180:  100:      int colNum = c + 1;  // column #'s are 1-based, so +1
+        -:  101:
+    66180:  102:      if (tablemeta->columns[c].colType == COL_TYPE_INT)
+        -:  103:      {
+   33090*:  104:        assert(isdigit(*pos));
+        -:  105:
+    33090:  106:        end = strchr(pos, ' ');  // find the next space
+   33090*:  107:        assert(end != NULL);
+        -:  108:
+    33090:  109:        *end = '\0';  // turn that chunk of data into a mini-string:
+        -:  110:
+    33090:  111:        int value = atoi(pos);
+        -:  112:
+    33090:  113:        resultset_putInt(rs, rowNum, colNum, value);
+        -:  114:
+    33090:  115:        pos = end + 1;  // advance to start of next value:
+        -:  116:      }
+    33090:  117:      else if (tablemeta->columns[c].colType == COL_TYPE_REAL)
+        -:  118:      {
+    6159*:  119:        assert(isdigit(*pos));
+        -:  120:
+     6159:  121:        end = strchr(pos, ' ');  // find the next space
+    6159*:  122:        assert(end != NULL);
+        -:  123:
+     6159:  124:        *end = '\0';  // turn that chunk of data into a mini-string:
+        -:  125:
+     6159:  126:        double value = atof(pos);
+        -:  127:
+     6159:  128:        resultset_putReal(rs, rowNum, colNum, value);
+        -:  129:
+     6159:  130:        pos = end + 1;  // advance to start of next value:
+        -:  131:      }
+        -:  132:      else
+        -:  133:      {
+   26931*:  134:        assert(tablemeta->columns[c].colType == COL_TYPE_STRING);
+        -:  135:
+        -:  136:        //
+        -:  137:        // strings start/end with either ' or "
+        -:  138:        //
+    26931:  139:        char quote = *pos;
+        -:  140:
+   26931*:  141:        assert(quote == '\'' || quote == '"');
+        -:  142:
+    26931:  143:        pos++;  // advance past quote
+        -:  144:
+    26931:  145:        end = pos;
+        -:  146:
+   235879:  147:        while (*end != quote)
+   208948:  148:          end++;
+        -:  149:
+    26931:  150:        assert(*end == quote);
+   26931*:  151:        assert(*(end + 1) == ' ');
+        -:  152:
+    26931:  153:        *end = '\0';  // over-write closing quote, turn into mini-string:
+        -:  154:
+    26931:  155:        resultset_putString(rs, rowNum, colNum, pos);
+        -:  156:
+    26931:  157:        pos = end + 2;  // we have to skip over TWO chars: '\0' and ' '
+        -:  158:      }
+        -:  159:    }//for
+        -:  160:
+        -:  161:    //
+        -:  162:    // end of current record, loop around and process the next:
+        -:  163:    //
+        -:  164:  }//while
+        -:  165:
+       10:  166:  free(dataBuffer);  // we are done with the input, so we can free/close
+       10:  167:  fclose(datafile);
+       10:  168:}
+        -:  169:
+        -:  170:
+        -:  171://
+        -:  172:// execute_where
+        -:  173:// 
+        -:  174:// Assuming there's a where clause (e.g. "where ID < 1000"), we execute that
+        -:  175:// where clause and delete any rows where the expression evaluates to false.
+        -:  176:// 
+        -:  177:// NOTE: it's possible for the resultset to come back empty.
+        -:  178://
+       10:  179:void execute_where(struct WHERE* where, struct TableMeta* tablemeta, struct ResultSet* rs)
+        -:  180:{
+       10:  181:  if (where == NULL)  // missing, so nothing to do:
+        -:  182:    return;
+        -:  183:
+        -:  184:  //
+        -:  185:  // which column is the where clause referencing?
+        -:  186:  //
+        5:  187:  int c = getMetaDataColumnIndex(tablemeta, where->expr->column->name);
+        -:  188:
+       5*:  189:  assert(0 <= c && c < tablemeta->numColumns);
+        -:  190:
+        5:  191:  int colNum = c + 1;  // column #'s are 1-based, so +1
+        -:  192:
+        -:  193:  //
+        -:  194:  // delete rows for which the where clause is false...  We
+        -:  195:  // work backwards --- this is more efficient since we know
+        -:  196:  // there's an array underneath and this won't cause any data
+        -:  197:  // to be shifted. Also, row # doesn't change if we work
+        -:  198:  // backwards...
+        -:  199:  //
+        5:  200:  int colType = tablemeta->columns[c].colType;
+        -:  201:
+        5:  202:  if (colType == COL_TYPE_INT)
+        -:  203:  {
+        -:  204:    //
+        -:  205:    // expr value should also be an integer:
+        -:  206:    //
+       3*:  207:    assert(where->expr->litType == INTEGER_LITERAL);
+        -:  208:
+        3:  209:    int rightValue = atoi(where->expr->value);
+        -:  210:
+     3078:  211:    for (int rowNum = rs->numRows; rowNum > 0; rowNum--)
+        -:  212:    {
+     3075:  213:      int leftValue = resultset_getInt(rs, rowNum, colNum);
+        -:  214:
+     3075:  215:      bool result = false;
+        -:  216:
+     3075:  217:      switch (where->expr->Operator)
+        -:  218:      {
+     2050:  219:      case EXPR_LT:
+     2050:  220:        result = leftValue < rightValue;
+     2050:  221:        break;
+     1025:  222:      case EXPR_LTE:
+     1025:  223:        result = leftValue <= rightValue;
+     1025:  224:        break;
+    #####:  225:      case EXPR_GT:
+    #####:  226:        result = leftValue > rightValue;
+    #####:  227:        break;
+    #####:  228:      case EXPR_GTE:
+    #####:  229:        result = leftValue >= rightValue;
+    #####:  230:        break;
+    #####:  231:      case EXPR_EQUAL:
+    #####:  232:        result = leftValue == rightValue;
+    #####:  233:        break;
+    #####:  234:      case EXPR_NOT_EQUAL:
+    #####:  235:        result = leftValue != rightValue;
+    #####:  236:        break;
+    #####:  237:      case EXPR_LIKE:
+    #####:  238:        panic("**INTERNAL ERROR: LIKE operator not valid with integers");
+    #####:  239:      default:
+    #####:  240:        panic("**INTERNAL ERROR: unknown expr operator");
+        -:  241:      }//switch
+        -:  242:
+    3075*:  243:      if (!result)  // if false, then where is false, so delete this row from result:
+     3057:  244:        resultset_deleteRow(rs, rowNum);
+        -:  245:    }//for
+        -:  246:  }//integers
+        2:  247:  else if (colType == COL_TYPE_REAL)
+        -:  248:  {
+        -:  249:    //
+        -:  250:    // expr value can be integer or real:
+        -:  251:    //
+    #####:  252:    assert(where->expr->litType == INTEGER_LITERAL ||
+        -:  253:      where->expr->litType == REAL_LITERAL);
+        -:  254:
+    #####:  255:    double rightValue = atof(where->expr->value);
+        -:  256:
+    #####:  257:    for (int rowNum = rs->numRows; rowNum > 0; rowNum--)
+        -:  258:    {
+    #####:  259:      double leftValue = resultset_getReal(rs, rowNum, colNum);
+        -:  260:
+    #####:  261:      bool result = false;
+        -:  262:
+    #####:  263:      switch (where->expr->Operator)
+        -:  264:      {
+    #####:  265:      case EXPR_LT:
+    #####:  266:        result = leftValue < rightValue;
+    #####:  267:        break;
+    #####:  268:      case EXPR_LTE:
+    #####:  269:        result = leftValue <= rightValue;
+    #####:  270:        break;
+    #####:  271:      case EXPR_GT:
+    #####:  272:        result = leftValue > rightValue;
+    #####:  273:        break;
+    #####:  274:      case EXPR_GTE:
+    #####:  275:        result = leftValue >= rightValue;
+    #####:  276:        break;
+    #####:  277:      case EXPR_EQUAL:
+    #####:  278:        result = leftValue == rightValue;
+    #####:  279:        break;
+    #####:  280:      case EXPR_NOT_EQUAL:
+    #####:  281:        result = leftValue != rightValue;
+    #####:  282:        break;
+    #####:  283:      case EXPR_LIKE:
+    #####:  284:        panic("**INTERNAL ERROR: LIKE operator not valid with reals");
+    #####:  285:      default:
+    #####:  286:        panic("**INTERNAL ERROR: unknown expr operator");
+        -:  287:      }//switch
+        -:  288:
+    #####:  289:      if (!result)  // if false, then where is false, so delete this row from result:
+    #####:  290:        resultset_deleteRow(rs, rowNum);
+        -:  291:    }//for
+        -:  292:  }//reals
+        -:  293:  else
+        -:  294:  {
+       2*:  295:    assert(colType == COL_TYPE_STRING);
+        -:  296:
+        -:  297:    //
+        -:  298:    // expr value must also be a string:
+        -:  299:    //
+        2:  300:    char* rightValue = where->expr->value;
+        -:  301:
+     2052:  302:    for (int rowNum = rs->numRows; rowNum > 0; rowNum--)
+        -:  303:    {
+     2050:  304:      char* leftValue = resultset_getString(rs, rowNum, colNum);
+        -:  305:
+     2050:  306:      bool result = false;
+        -:  307:
+     2050:  308:      switch (where->expr->Operator)
+        -:  309:      {
+     1025:  310:      case EXPR_LT:
+     1025:  311:        result = (strcmp(leftValue, rightValue) < 0);
+     1025:  312:        break;
+     1025:  313:      case EXPR_LTE:
+     1025:  314:        result = (strcmp(leftValue, rightValue) <= 0);
+     1025:  315:        break;
+    #####:  316:      case EXPR_GT:
+    #####:  317:        result = (strcmp(leftValue, rightValue) > 0);
+    #####:  318:        break;
+    #####:  319:      case EXPR_GTE:
+    #####:  320:        result = (strcmp(leftValue, rightValue) >= 0);
+    #####:  321:        break;
+    #####:  322:      case EXPR_EQUAL:
+    #####:  323:        result = (strcmp(leftValue, rightValue) == 0);
+    #####:  324:        break;
+    #####:  325:      case EXPR_NOT_EQUAL:
+    #####:  326:        result = (strcmp(leftValue, rightValue) != 0);
+    #####:  327:        break;
+    #####:  328:      case EXPR_LIKE:
+    #####:  329:        panic("**ERROR: LIKE operator not yet supported");
+    #####:  330:      default:
+    #####:  331:        panic("**INTERNAL ERROR: unknown expr operator");
+        -:  332:      }//switch
+        -:  333:
+    2050*:  334:      if (!result)  // if false, then where is false, so delete this row from result:
+     2035:  335:        resultset_deleteRow(rs, rowNum);
+        -:  336:
+     2050:  337:      free(leftValue);  // we are responsible for freeing this memory:
+        -:  338:    }//for
+        -:  339:  }//strings
+        -:  340:}
+        -:  341:
+        -:  342:
+        -:  343://
+        -:  344:// delete_unneeded_columns
+        -:  345://
+        -:  346:// Since we initially add all table columns to the resulset, now 
+        -:  347:// we look through the actual select query and remove any columns
+        -:  348:// that are not asked for.
+        -:  349://
+       10:  350:void delete_unneeded_columns(struct SELECT* select, struct TableMeta* tablemeta, struct ResultSet* rs)
+        -:  351:{
+       46:  352:  for (int c = 0; c < tablemeta->numColumns; c++)
+        -:  353:  {
+        -:  354:    //
+        -:  355:    // go through the AST select query and see if we need
+        -:  356:    // this column, and if not, delete from result set:
+        -:  357:    //
+       36:  358:    struct COLUMN* column = select->columns;
+        -:  359:
+       36:  360:    bool deleteCol = true;
+        -:  361:
+       79:  362:    while (column != NULL)
+        -:  363:    {
+       68:  364:      if (icmpStrings(tablemeta->columns[c].name, column->name) == 0)
+        -:  365:      {
+        -:  366:        deleteCol = false;
+        -:  367:        break;
+        -:  368:      }
+        -:  369:
+       43:  370:      column = column->next;
+        -:  371:    }
+        -:  372:
+       36:  373:    if (deleteCol)  // delete column!
+        -:  374:    {
+       11:  375:      int position = resultset_findColumn(rs, 1 /*startPos*/, tablemeta->name, tablemeta->columns[c].name);
+        -:  376:
+      11*:  377:      assert(position > 0);
+        -:  378:
+       11:  379:      resultset_deleteColumn(rs, position);
+        -:  380:    }
+        -:  381:  }//for
+       10:  382:}
+        -:  383:
+        -:  384:
+        -:  385://
+        -:  386:// reorder_columns
+        -:  387://
+        -:  388:// Since we initially add all table columns to the resulset, now 
+        -:  389:// we look through the actual select query and reorder the columns
+        -:  390:// in the order specified in the select query.
+        -:  391://
+       10:  392:void reorder_columns(struct SELECT* select, struct ResultSet* rs)
+        -:  393:{
+       10:  394:  struct COLUMN* column = select->columns;
+        -:  395:
+       10:  396:  int curPos = 1;  // current position in the list of select columns (1, 2, ...)
+        -:  397:
+       35:  398:  while (column != NULL)
+        -:  399:  {
+        -:  400:    //
+        -:  401:    // NOTE: this does not handle duplicate columns, so queries like
+        -:  402:    //
+        -:  403:    //   select min(date), max(date) ...
+        -:  404:    //
+        -:  405:    // do not work. Only one of the columns will remain.
+        -:  406:    //
+        -:  407:
+       25:  408:    int position = resultset_findColumn(rs, 1 /*startPos*/, column->table, column->name);
+        -:  409:
+      25*:  410:    assert(position > 0);
+        -:  411:
+       25:  412:    resultset_moveColumn(rs, position /*from*/, curPos /*to*/);
+        -:  413:
+        -:  414:    //
+        -:  415:    // advance to next column:
+        -:  416:    //
+       25:  417:    column = column->next;
+       25:  418:    curPos++;
+        -:  419:  }
+       10:  420:}
+        -:  421:
+        -:  422:
+        -:  423://
+        -:  424:// apply_functions
+        -:  425://
+        -:  426:// applies any aggregate functions such as MAX or AVG.
+        -:  427://
+        -:  428:// NOTE: after applying an aggregate function, the # of rows
+        -:  429:// in the resultset will be at most 1.
+        -:  430://
+       10:  431:void apply_functions(struct SELECT* select, struct ResultSet* rs)
+        -:  432:{
+       10:  433:  struct COLUMN* column = select->columns;
+        -:  434:
+       10:  435:  int colNum = 1;
+        -:  436:
+       35:  437:  while (column != NULL)
+        -:  438:  {
+       25:  439:    if (column->function != NO_FUNCTION)
+        -:  440:    {
+        5:  441:      resultset_applyFunction(rs, column->function, colNum);
+        -:  442:    }
+        -:  443:
+       25:  444:    colNum++;
+       25:  445:    column = column->next;
+        -:  446:  }
+       10:  447:}
+        -:  448:
+        -:  449:
+        -:  450://
+        -:  451:// apply_limit
+        -:  452://
+        -:  453:// If the query specified a limit, e.g."select ... limit 10;" then
+        -:  454:// we apply that limit by deleting all rows past the limit.
+        -:  455://
+       10:  456:void apply_limit(struct SELECT* select, struct ResultSet* rs)
+        -:  457:{
+       10:  458:  if (select->limit != NULL)
+        -:  459:  {
+        2:  460:    int limit = select->limit->N;
+        -:  461:
+       2*:  462:    assert(limit >= 0);
+        -:  463:
+        -:  464:    //
+        -:  465:    // delete the rows backwards, this is more efficient since we know
+        -:  466:    // there's an array underneath and this won't cause any data to be
+        -:  467:    // shifted. Also, row # doesn't change if we go backwards...
+        -:  468:    //
+       34:  469:    for (int rowNum = rs->numRows; rowNum > limit; rowNum--)
+        -:  470:    {
+       32:  471:      resultset_deleteRow(rs, rowNum);
+        -:  472:    }
+        -:  473:  }
+       10:  474:}
+        -:  475:
+        -:  476:
+        -:  477://
+        -:  478:// execute_query
+        -:  479:// 
+        -:  480:// execute a select query
+        -:  481://
+       10:  482:struct ResultSet* execute_query(struct Database* db, struct QUERY* query)
+        -:  483:{
+      10*:  484:  if (db == NULL) panic("db is NULL (execute)");
+      10*:  485:  if (query == NULL) panic("query is NULL (execute)");
+        -:  486:
+       10:  487:  if (query->queryType != SELECT_QUERY)
+        -:  488:  {
+    #####:  489:    printf("**INTERNAL ERROR: execute() only supports SELECT queries.\n");
+    #####:  490:    return NULL;
+        -:  491:  }
+        -:  492:
+       10:  493:  struct SELECT* select = query->q.select;  // alias for less typing:
+        -:  494:
+        -:  495:  //
+        -:  496:  // (1) we need a pointer to the table's meta data, so find it:
+        -:  497:  //
+       10:  498:  struct TableMeta* tablemeta = NULL;
+        -:  499:
+       23:  500:  for (int t = 0; t < db->numTables; t++)
+        -:  501:  {
+       23:  502:    if (icmpStrings(db->tables[t].name, select->table) == 0)  // found it:
+        -:  503:    {
+       10:  504:      tablemeta = &db->tables[t];
+       10:  505:      break;
+        -:  506:    }
+        -:  507:  }
+        -:  508:
+      10*:  509:  assert(tablemeta != NULL);
+        -:  510:
+        -:  511:  //
+        -:  512:  // (2) create a result set and setup the columns in the result set to
+        -:  513:  //     match the columns in the meta-data, in the same order. This way
+        -:  514:  //     when we read the file, we insert the values in the same order
+        -:  515:  //     as they appear in each line, left-to-right:
+        -:  516:  //
+       10:  517:  struct ResultSet* rs = resultset_create();
+        -:  518:
+       46:  519:  for (int c = 0; c < tablemeta->numColumns; c++)
+        -:  520:  {
+        -:  521:    //
+        -:  522:    // columns are 1-based, so insert @ position c+1 so
+        -:  523:    // that we are appending each new column:
+        -:  524:    //
+       72:  525:    int position = resultset_insertColumn(rs, c+1,
+        -:  526:      tablemeta->name, tablemeta->columns[c].name,
+       36:  527:      NO_FUNCTION /*for now*/, tablemeta->columns[c].colType);
+        -:  528:
+      36*:  529:    assert(position == (c + 1));
+        -:  530:  }
+        -:  531:
+        -:  532:  // 
+        -:  533:  // (3) open the table's data file
+        -:  534:  //
+        -:  535:  // the table exists within a sub-directory under the executable
+        -:  536:  // where the directory has the same name as the database, and with 
+        -:  537:  // a "TABLE-NAME.data" filename within that sub-directory:
+        -:  538:  //
+       10:  539:  char path[(2 * DATABASE_MAX_ID_LENGTH) + 10];
+        -:  540:
+       10:  541:  strcpy(path, db->name);    // name/name.data
+       10:  542:  strcat(path, "/");
+       10:  543:  strcat(path, tablemeta->name);
+       10:  544:  strcat(path, ".data");
+        -:  545:
+        -:  546:  //
+        -:  547:  // (4) read all the data from .data file into the resultset:
+        -:  548:  //
+       10:  549:  readDataIntoRS(path, tablemeta, rs);
+        -:  550:
+        -:  551:  // resultset_print(rs);
+        -:  552:
+        -:  553:  //
+        -:  554:  // At this point all the data is loaded into the resultset, now 
+        -:  555:  // we filter the data based on the where clause, if present:
+        -:  556:  //
+       10:  557:  execute_where(select->where, tablemeta, rs);
+        -:  558:
+        -:  559:  //
+        -:  560:  // next we delete the columns we don't need --- i.e. delete
+        -:  561:  // the columns that the user didn't select:
+        -:  562:  //
+       10:  563:  delete_unneeded_columns(select, tablemeta, rs);
+        -:  564:
+        -:  565:  //
+        -:  566:  // we have to reorder the columns to match the order
+        -:  567:  // in the select query...
+        -:  568:  //
+       10:  569:  reorder_columns(select, rs);
+        -:  570:
+        -:  571:  //
+        -:  572:  // Next step is to apply any functions applied
+        -:  573:  // to the select columns...
+        -:  574:  // 
+        -:  575:  // NOTE: when a function is applied, the # of rows in
+        -:  576:  // the result set will drop to 1. The data in other 
+        -:  577:  // columns is NOT deleted however, so that additional
+        -:  578:  // functions can be applied. But when printing the 
+        -:  579:  // result set, at most one row will be printed.
+        -:  580:  //
+       10:  581:  apply_functions(select, rs);
+        -:  582:
+        -:  583:  //
+        -:  584:  // if we have a limit, delete the unnecessary rows:
+        -:  585:  //
+       10:  586:  apply_limit(select, rs);
+        -:  587:
+        -:  588:  //
+        -:  589:  // Done! Return the final resultset to the caller:
+        -:  590:  //
+        -:  591:  return rs;
+        -:  592:}

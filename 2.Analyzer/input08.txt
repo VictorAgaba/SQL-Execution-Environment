@@ -1,0 +1,6 @@
+CTA
+Select * from ridership where Riders >= 1000 order by count(ID) limit 100;
+Select avg(ID), min(Date), Daytype from RIDERSHIP where Daytype <> 'W' limit 10;
+select * from RiderSHIP inner join STATIONS on RiderSHIP.ID = STATIONS.ID
+  where Riders <= 999;
+$
